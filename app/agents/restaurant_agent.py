@@ -306,7 +306,7 @@ class RestaurantRecommendationAgent:
         
         # 검색 결과를 텍스트로 변환
         restaurants_text = "\n".join([
-            f"- {r.name} (평점: {r.rating}, 주소: {r.address})"
+            f"- {r.name} (평점: {r.rating}, 주소: {r.address}, 설명: {r.description})"
             for r in search_results[:10]  # 상위 10개만
         ])
         
