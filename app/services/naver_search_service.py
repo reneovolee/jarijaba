@@ -1,7 +1,6 @@
 """네이버 검색 API 서비스"""
 
-import urllib.request
-import urllib.parse
+import requests
 import json
 from typing import List, Optional, Dict, Any
 from app.models import RestaurantRecommendation
@@ -16,9 +15,13 @@ class NaverSearchService:
     """네이버 검색 API 서비스"""
     
     def __init__(self):
-        # 네이버 검색 API는 무료 공개 API이므로 키가 필요하지 않음
+        # 네이버 검색 Open API 사용
+        self.client_id = settings.naver_client_id
+        self.client_secret = settings.naver_client_secret
+        self.base_url = "https://openapi.naver.com/v1"
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "X-Naver-Client-Id": self.client_id,
+            "X-Naver-Client-Secret": self.client_secret
         }
     
     async def search_restaurants(
@@ -88,81 +91,66 @@ class NaverSearchService:
         return " ".join(query_parts)
     
     async def _search_blog(self, query: str) -> List[Dict[str, Any]]:
-        """블로그 검색 (웹 스크래핑)"""
+        """블로그 검색 (네이버 Open API)"""
         try:
-            enc_query = urllib.parse.quote(query)
-            url = f"https://search.naver.com/search.naver?where=blog&query={enc_query}&display=20"
+            url = f"{self.base_url}/search/blog"
+            params = {
+                "query": query,
+                "display": 10,
+                "start": 1,
+                "sort": "sim"
+            }
             
-            request = urllib.request.Request(url)
-            for key, value in self.headers.items():
-                request.add_header(key, value)
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
             
-            response = urllib.request.urlopen(request)
-            
-            if response.getcode() == 200:
-                response_body = response.read()
-                html_content = response_body.decode('utf-8')
-                
-                # HTML에서 블로그 정보 추출
-                return self._parse_blog_html(html_content)
-            else:
-                print(f"블로그 검색 오류: {response.getcode()}")
-                return []
+            data = response.json()
+            return data.get('items', [])
                 
         except Exception as e:
-            print(f"블로그 검색 오류: {e}")
+            logger.error(f"블로그 검색 오류: {e}")
             return []
     
     async def _search_news(self, query: str) -> List[Dict[str, Any]]:
-        """뉴스 검색 (웹 스크래핑)"""
+        """뉴스 검색 (네이버 Open API)"""
         try:
-            enc_query = urllib.parse.quote(query)
-            url = f"https://search.naver.com/search.naver?where=news&query={enc_query}&display=10"
+            url = f"{self.base_url}/search/news"
+            params = {
+                "query": query,
+                "display": 5,
+                "start": 1,
+                "sort": "sim"
+            }
             
-            request = urllib.request.Request(url)
-            for key, value in self.headers.items():
-                request.add_header(key, value)
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
             
-            response = urllib.request.urlopen(request)
-            
-            if response.getcode() == 200:
-                response_body = response.read()
-                html_content = response_body.decode('utf-8')
-                
-                # HTML에서 뉴스 정보 추출
-                return self._parse_news_html(html_content)
-            else:
-                print(f"뉴스 검색 오류: {response.getcode()}")
-                return []
+            data = response.json()
+            return data.get('items', [])
                 
         except Exception as e:
-            print(f"뉴스 검색 오류: {e}")
+            logger.error(f"뉴스 검색 오류: {e}")
             return []
     
     async def _search_web(self, query: str) -> List[Dict[str, Any]]:
-        """웹 검색 (웹 스크래핑)"""
+        """웹 검색 (네이버 Open API)"""
         try:
-            enc_query = urllib.parse.quote(query)
-            url = f"https://search.naver.com/search.naver?where=web&query={enc_query}&display=10"
+            url = f"{self.base_url}/search/webkr"
+            params = {
+                "query": query,
+                "display": 5,
+                "start": 1,
+                "sort": "sim"
+            }
             
-            request = urllib.request.Request(url)
-            for key, value in self.headers.items():
-                request.add_header(key, value)
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
             
-            response = urllib.request.urlopen(request)
-            
-            if response.getcode() == 200:
-                response_body = response.read()
-                html_content = response_body.decode('utf-8')
-                
-                # HTML에서 웹 정보 추출
-                return self._parse_web_html(html_content)
-            else:
-                print(f"웹 검색 오류: {response.getcode()}")
-                return []
+            data = response.json()
+            return data.get('items', [])
                 
         except Exception as e:
-            print(f"웹 검색 오류: {e}")
+            logger.error(f"웹 검색 오류: {e}")
             return []
     
     def _parse_and_merge_results(
@@ -204,6 +192,7 @@ class NaverSearchService:
             title = item.get('title', '').replace('<b>', '').replace('</b>', '')
             description = item.get('description', '').replace('<b>', '').replace('</b>', '')
             link = item.get('link', '')
+            bloggername = item.get('bloggername', '')
             
             # 맛집명 추출 (제목에서)
             restaurant_name = self._extract_restaurant_name(title)
@@ -234,7 +223,7 @@ class NaverSearchService:
             )
             
         except Exception as e:
-            print(f"블로그 아이템 파싱 오류: {e}")
+            logger.error(f"블로그 아이템 파싱 오류: {e}")
             return None
     
     def _parse_news_item(self, item: Dict[str, Any]) -> Optional[RestaurantRecommendation]:
@@ -243,6 +232,7 @@ class NaverSearchService:
             title = item.get('title', '').replace('<b>', '').replace('</b>', '')
             description = item.get('description', '').replace('<b>', '').replace('</b>', '')
             link = item.get('link', '')
+            pub_date = item.get('pubDate', '')
             
             # 맛집명 추출
             restaurant_name = self._extract_restaurant_name(title)
@@ -270,7 +260,7 @@ class NaverSearchService:
             )
             
         except Exception as e:
-            print(f"뉴스 아이템 파싱 오류: {e}")
+            logger.error(f"뉴스 아이템 파싱 오류: {e}")
             return None
     
     def _parse_web_item(self, item: Dict[str, Any]) -> Optional[RestaurantRecommendation]:
@@ -306,7 +296,7 @@ class NaverSearchService:
             )
             
         except Exception as e:
-            print(f"웹 아이템 파싱 오류: {e}")
+            logger.error(f"웹 아이템 파싱 오류: {e}")
             return None
     
     def _extract_restaurant_name(self, text: str) -> Optional[str]:
@@ -428,80 +418,6 @@ class NaverSearchService:
         
         return unique_restaurants
     
-    def _parse_blog_html(self, html_content: str) -> List[Dict[str, Any]]:
-        """블로그 HTML 파싱"""
-        import re
-        
-        results = []
-        
-        # 블로그 제목과 링크 추출
-        title_pattern = r'<a[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)</a>'
-        link_pattern = r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*title[^"]*"[^>]*>'
-        desc_pattern = r'<div[^>]*class="[^"]*dsc[^"]*"[^>]*>([^<]+)</div>'
-        
-        titles = re.findall(title_pattern, html_content)
-        links = re.findall(link_pattern, html_content)
-        descriptions = re.findall(desc_pattern, html_content)
-        
-        for i, title in enumerate(titles):
-            if i < len(links) and i < len(descriptions):
-                results.append({
-                    'title': title.strip(),
-                    'link': links[i],
-                    'description': descriptions[i].strip()
-                })
-        
-        return results[:20]  # 최대 20개
-    
-    def _parse_news_html(self, html_content: str) -> List[Dict[str, Any]]:
-        """뉴스 HTML 파싱"""
-        import re
-        
-        results = []
-        
-        # 뉴스 제목과 링크 추출
-        title_pattern = r'<a[^>]*class="[^"]*news_tit[^"]*"[^>]*>([^<]+)</a>'
-        link_pattern = r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*news_tit[^"]*"[^>]*>'
-        desc_pattern = r'<div[^>]*class="[^"]*news_dsc[^"]*"[^>]*>([^<]+)</div>'
-        
-        titles = re.findall(title_pattern, html_content)
-        links = re.findall(link_pattern, html_content)
-        descriptions = re.findall(desc_pattern, html_content)
-        
-        for i, title in enumerate(titles):
-            if i < len(links) and i < len(descriptions):
-                results.append({
-                    'title': title.strip(),
-                    'link': links[i],
-                    'description': descriptions[i].strip()
-                })
-        
-        return results[:10]  # 최대 10개
-    
-    def _parse_web_html(self, html_content: str) -> List[Dict[str, Any]]:
-        """웹 HTML 파싱"""
-        import re
-        
-        results = []
-        
-        # 웹 제목과 링크 추출
-        title_pattern = r'<a[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)</a>'
-        link_pattern = r'<a[^>]*href="([^"]*)"[^>]*class="[^"]*title[^"]*"[^>]*>'
-        desc_pattern = r'<div[^>]*class="[^"]*dsc[^"]*"[^>]*>([^<]+)</div>'
-        
-        titles = re.findall(title_pattern, html_content)
-        links = re.findall(link_pattern, html_content)
-        descriptions = re.findall(desc_pattern, html_content)
-        
-        for i, title in enumerate(titles):
-            if i < len(links) and i < len(descriptions):
-                results.append({
-                    'title': title.strip(),
-                    'link': links[i],
-                    'description': descriptions[i].strip()
-                })
-        
-        return results[:10]  # 최대 10개
     
     async def get_place_details(self, place_id: str) -> Optional[RestaurantRecommendation]:
         """장소 상세 정보 조회 (호환성을 위한 메서드)"""

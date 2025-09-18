@@ -32,8 +32,22 @@ app.add_middleware(
 )
 
 # 서비스 초기화
-restaurant_agent = RestaurantRecommendationAgent()
-outlook_service = OutlookService()
+logger.info("서비스 초기화 시작")
+try:
+    restaurant_agent = RestaurantRecommendationAgent()
+    logger.info("RestaurantRecommendationAgent 초기화 완료")
+except Exception as e:
+    logger.error(f"RestaurantRecommendationAgent 초기화 실패: {str(e)}", exc_info=True)
+    raise
+
+try:
+    outlook_service = OutlookService()
+    logger.info("OutlookService 초기화 완료")
+except Exception as e:
+    logger.error(f"OutlookService 초기화 실패: {str(e)}", exc_info=True)
+    # Outlook 서비스는 선택적이므로 계속 진행
+
+logger.info("모든 서비스 초기화 완료")
 
 
 class RestaurantRecommendationRequest(BaseModel):
@@ -52,10 +66,13 @@ async def recommend_restaurants(request: RestaurantRecommendationRequest) -> Dic
     try:
         # 회식 장소 추천 에이전트로 처리
         logger.info("에이전트 처리 시작")
+        logger.info(f"처리할 쿼리: {request.query}")
+        
         result = await restaurant_agent.process_query(request.query)
         
         logger.info(f"에이전트 처리 완료 - 쿼리 타입: {result.get('query_type', 'unknown')}")
         logger.info(f"추천 결과 개수: {len(result.get('recommendations', []))}")
+        logger.info(f"응답 길이: {len(result.get('response', ''))}")
         
         if result["query_type"] == "restaurant_recommendation":
             recommendations_data = []

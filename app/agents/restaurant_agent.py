@@ -28,14 +28,53 @@ class RestaurantRecommendationAgent:
     """회식 장소 추천 에이전트"""
     
     def __init__(self):
-        self.llm = AzureChatOpenAI(
-            azure_deployment=settings.azure_openai_deployment_name,
-            azure_endpoint=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
-            api_version=settings.azure_openai_api_version,
-        )
-        self.search_service = NaverSearchService()
-        self.graph = self._build_graph()
+        logger.info("RestaurantRecommendationAgent 초기화 시작")
+        
+        # LLM 초기화
+        try:
+            logger.info(f"Azure OpenAI 설정 - Endpoint: {settings.azure_openai_endpoint}")
+            logger.info(f"Deployment: {settings.azure_openai_deployment_name}")
+            logger.info(f"API Version: {settings.azure_openai_api_version}")
+            logger.info(f"API Key (첫 10자): {settings.azure_openai_api_key[:10]}...")
+            
+            # 설정 검증
+            if not settings.azure_openai_api_key or settings.azure_openai_api_key == "your_azure_openai_api_key":
+                raise ValueError("Azure OpenAI API 키가 설정되지 않았습니다. .env 파일을 확인하세요.")
+            
+            if not settings.azure_openai_endpoint or settings.azure_openai_endpoint == "https://your-resource.openai.azure.com/":
+                raise ValueError("Azure OpenAI 엔드포인트가 설정되지 않았습니다. .env 파일을 확인하세요.")
+            
+            if not settings.azure_openai_deployment_name or settings.azure_openai_deployment_name == "your_deployment_name":
+                raise ValueError("Azure OpenAI 배포명이 설정되지 않았습니다. .env 파일을 확인하세요.")
+            
+            self.llm = AzureChatOpenAI(
+                azure_deployment=settings.azure_openai_deployment_name,
+                azure_endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key,
+                api_version=settings.azure_openai_api_version,
+            )
+            logger.info("LLM 초기화 완료")
+        except Exception as e:
+            logger.error(f"LLM 초기화 오류: {str(e)}", exc_info=True)
+            raise
+        
+        # 검색 서비스 초기화
+        try:
+            self.search_service = NaverSearchService()
+            logger.info("검색 서비스 초기화 완료")
+        except Exception as e:
+            logger.error(f"검색 서비스 초기화 오류: {str(e)}", exc_info=True)
+            raise
+        
+        # 그래프 구성
+        try:
+            self.graph = self._build_graph()
+            logger.info("그래프 구성 완료")
+        except Exception as e:
+            logger.error(f"그래프 구성 오류: {str(e)}", exc_info=True)
+            raise
+        
+        logger.info("RestaurantRecommendationAgent 초기화 완료")
     
     def _build_graph(self) -> StateGraph:
         """LangGraph 그래프 구성"""
@@ -74,20 +113,53 @@ class RestaurantRecommendationAgent:
                 HumanMessage(content=state["user_query"])
             ]
             
-            response = await self.llm.ainvoke(messages)
-            query_type = response.content.strip().lower()
+            logger.info("쿼리 분류 LLM 호출 시작")
+            import asyncio
+            try:
+                response = await asyncio.wait_for(
+                    self.llm.ainvoke(messages), 
+                    timeout=60.0
+                )
+                logger.info("쿼리 분류 LLM 호출 완료")
+            except Exception as llm_error:
+                logger.error(f"LLM 호출 중 오류 발생: {type(llm_error).__name__}: {str(llm_error)}")
+                logger.error(f"오류 상세 정보: {repr(llm_error)}")
+                raise
             
+            query_type = response.content.strip().lower()
             logger.info(f"쿼리 분류 결과: {query_type}")
             
             return {
                 **state,
                 "query_type": query_type
             }
-        except Exception as e:
-            logger.error(f"쿼리 분류 오류: {str(e)}", exc_info=True)
+        except asyncio.TimeoutError:
+            logger.error("쿼리 분류 LLM 호출 타임아웃 (15초)")
+            # 키워드 기반으로 간단한 분류 시도
+            query_lower = state["user_query"].lower()
+            if any(keyword in query_lower for keyword in ["회식", "식당", "맛집", "회식 장소", "식사", "점심", "저녁", "삼겹살"]):
+                query_type = "restaurant_recommendation"
+            else:
+                query_type = "general"
+            logger.info(f"타임아웃 후 키워드 기반 분류 결과: {query_type}")
             return {
                 **state,
-                "query_type": "general"
+                "query_type": query_type
+            }
+        except Exception as e:
+            logger.error(f"쿼리 분류 오류: {str(e)}", exc_info=True)
+            logger.error(f"오류 타입: {type(e).__name__}")
+            logger.error(f"오류 상세: {repr(e)}")
+            # 키워드 기반으로 간단한 분류 시도
+            query_lower = state["user_query"].lower()
+            if any(keyword in query_lower for keyword in ["회식", "식당", "맛집", "회식 장소", "식사", "점심", "저녁", "삼겹살"]):
+                query_type = "restaurant_recommendation"
+            else:
+                query_type = "general"
+            logger.info(f"오류 후 키워드 기반 분류 결과: {query_type}")
+            return {
+                **state,
+                "query_type": query_type
             }
     
     async def _extract_preferences(self, state: AgentState) -> AgentState:
@@ -95,30 +167,59 @@ class RestaurantRecommendationAgent:
         if state["query_type"] != "restaurant_recommendation":
             return state
         
-        messages = [
-            SystemMessage(content="""
-            사용자의 회식 장소 추천 요청에서 다음 정보를 추출하여 JSON 형태로 응답하세요:
-            {
-                "location": "지역 또는 주소",
-                "budget": "예산 수준 (1-4)",
-                "cuisine_type": "음식 종류",
-                "group_size": "인원수",
-                "occasion": "회식 목적",
-                "special_requirements": "특별 요구사항"
+        logger.info("선호도 추출 시작")
+        
+        try:
+            messages = [
+                SystemMessage(content="""
+                사용자의 회식 장소 추천 요청에서 다음 정보를 추출하여 JSON 형태로 응답하세요:
+                {
+                    "location": "지역 또는 주소",
+                    "budget": "예산 수준 (1-4)",
+                    "cuisine_type": "음식 종류",
+                    "group_size": "인원수",
+                    "occasion": "회식 목적",
+                    "special_requirements": "특별 요구사항"
+                }
+                
+                정보가 명시되지 않은 경우 null로 설정하세요.
+                """),
+                HumanMessage(content=state["user_query"])
+            ]
+            
+            logger.info("선호도 추출 LLM 호출 시작")
+            import asyncio
+            response = await asyncio.wait_for(
+                self.llm.ainvoke(messages), 
+                timeout=60.0
+            )
+            logger.info("선호도 추출 LLM 호출 완료")
+            
+            # JSON 파싱 (실제로는 더 안전한 파싱 필요)
+            try:
+                import json
+                preferences = json.loads(response.content)
+                logger.info(f"추출된 선호도: {preferences}")
+            except Exception as parse_error:
+                logger.error(f"JSON 파싱 오류: {parse_error}")
+                preferences = {
+                    "location": "서울",
+                    "budget": None,
+                    "cuisine_type": None,
+                    "group_size": None,
+                    "occasion": None,
+                    "special_requirements": None
+                }
+            
+            return {
+                **state,
+                "preferences": preferences,
+                "location": preferences.get("location", "서울")
             }
             
-            정보가 명시되지 않은 경우 null로 설정하세요.
-            """),
-            HumanMessage(content=state["user_query"])
-        ]
-        
-        response = await self.llm.ainvoke(messages)
-        
-        # JSON 파싱 (실제로는 더 안전한 파싱 필요)
-        try:
-            import json
-            preferences = json.loads(response.content)
-        except:
+        except asyncio.TimeoutError:
+            logger.error("선호도 추출 LLM 호출 타임아웃 (15초)")
+            # 기본 선호도 설정
             preferences = {
                 "location": "서울",
                 "budget": None,
@@ -127,12 +228,27 @@ class RestaurantRecommendationAgent:
                 "occasion": None,
                 "special_requirements": None
             }
-        
-        return {
-            **state,
-            "preferences": preferences,
-            "location": preferences.get("location", "서울")
-        }
+            return {
+                **state,
+                "preferences": preferences,
+                "location": "서울"
+            }
+        except Exception as e:
+            logger.error(f"선호도 추출 오류: {str(e)}", exc_info=True)
+            # 기본 선호도 설정
+            preferences = {
+                "location": "서울",
+                "budget": None,
+                "cuisine_type": None,
+                "group_size": None,
+                "occasion": None,
+                "special_requirements": None
+            }
+            return {
+                **state,
+                "preferences": preferences,
+                "location": "서울"
+            }
     
     async def _search_restaurants(self, state: AgentState) -> AgentState:
         """네이버 검색 API를 통한 식당 검색"""
@@ -197,7 +313,8 @@ class RestaurantRecommendationAgent:
         messages = [
             SystemMessage(content=f"""
             다음 식당 목록에서 사용자의 요구사항에 맞는 최고의 추천 3-5개를 선택하고 설명하세요.
-            
+            각 식당 이름은 정확한 이름이 아닐 수 있습니다. 식당의 설명 부분에 식당 이름이 있다면 그 이름을 식당 이름으로 사용하세요.
+
             사용자 요구사항:
             - 지역: {preferences.get('location', '서울')}
             - 예산: {preferences.get('budget', '제한없음')}
@@ -215,7 +332,29 @@ class RestaurantRecommendationAgent:
             HumanMessage(content=f"검색된 식당 목록:\n{restaurants_text}")
         ]
         
-        response = await self.llm.ainvoke(messages)
+        logger.info("LLM 호출 시작")
+        try:
+            timeout = 300.0
+            import asyncio
+            response = await asyncio.wait_for(
+                self.llm.ainvoke(messages), 
+                timeout=timeout
+            )
+            logger.info("LLM 호출 완료")
+        except asyncio.TimeoutError:
+            logger.error(f"LLM 호출 타임아웃 ({timeout}초)")
+            return {
+                **state,
+                "recommendations": search_results[:3],  # 기본 추천
+                "response": "죄송합니다. AI 분석 중 시간이 초과되었습니다. 검색된 식당 중 상위 3개를 추천드립니다."
+            }
+        except Exception as e:
+            logger.error(f"LLM 호출 오류: {str(e)}", exc_info=True)
+            return {
+                **state,
+                "recommendations": search_results[:3],  # 기본 추천
+                "response": f"AI 분석 중 오류가 발생했습니다. 검색된 식당 중 상위 3개를 추천드립니다. (오류: {str(e)})"
+            }
         
         # 추천 결과를 원본 데이터와 매칭
         recommendations = []

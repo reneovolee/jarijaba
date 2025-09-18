@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     azure_openai_deployment_name: str
     
     # 네이버 검색 API는 무료 공개 API이므로 키가 필요하지 않음
-    
+    naver_client_id: str
+    naver_client_secret: str
+
     # Microsoft Graph API 설정
     microsoft_graph_client_id: str
     microsoft_graph_client_secret: str
