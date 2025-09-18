@@ -1,0 +1,16 @@
+[project]
+name = "lgprompthon"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.12.15",
+    "botbuilder-core>=4.17.0",
+    "fastapi>=0.116.2",
+    "psycopg2-binary>=2.9.10",
+    "pydantic>=2.11.9",
+    "requests>=2.32.5",
+    "sqlalchemy>=2.0.43",
+    "uvicorn>=0.35.0",
+]
