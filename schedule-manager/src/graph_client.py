@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import requests
 
@@ -63,6 +64,33 @@ class GraphClient:
         resp.raise_for_status()
         return resp.json()
 
+    # --- RSVP accept helpers ---
+    def find_event_by_icaluid(self, ical_uid: str) -> Optional[str]:
+        url = f"{self.graph_host}/me/events?$filter=icalUId eq '{ical_uid}'&$select=id,icalUId"
+        resp = requests.get(url, headers=self._headers, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("value", [])
+        if not items:
+            return None
+        return items[0].get("id")
+
+    def accept_event(self, event_id: str, comment: Optional[str] = None, send_response: bool = True) -> None:
+        encoded_id = quote(event_id, safe="")
+        url = f"{self.graph_host}/me/events/{encoded_id}/accept"
+        body: Dict[str, Any] = {"comment": comment or "", "sendResponse": send_response}
+        print(f"Accepting event: {event_id}")
+        print(f"URL: {url}")
+        print(f"Body: {body}")
+        resp = requests.post(url, headers=self._headers, data=json.dumps(body), timeout=60)
+        if not resp.ok:
+            print(f"Error response: {resp.status_code} - {resp.text}")
+            # Check if user is the organizer
+            if "meeting organizer" in resp.text.lower():
+                print("User is the meeting organizer, cannot respond to own meeting")
+                return  # Don't raise error for organizer case
+        resp.raise_for_status()
+
     def forward_event(self, event_id: str, recipients: List[str], comment: str | None = None) -> None:
         url = f"{self.graph_host}/me/events/{event_id}/forward"
         body = {
@@ -123,7 +151,8 @@ class GraphClient:
         location: Optional[str] = None,
         body_append: Optional[str] = None,
     ) -> None:
-        url = f"{self.graph_host}/me/events/{event_id}"
+        encoded_id = quote(event_id, safe="")
+        url = f"{self.graph_host}/me/events/{encoded_id}"
         patch: Dict[str, Any] = {}
         if location:
             patch["location"] = {"displayName": location}
