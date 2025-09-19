@@ -1,0 +1,134 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Vote Bot API",
+    "version": "1.0.0"
+  },
+  "host": "38ebefb95f20.ngrok-free.app",
+  "basePath": "/",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "paths": {
+    "/send_poll": {
+      "post": {
+        "summary": "Create a new poll and return Adaptive Card JSON",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string", "example": "회식 날짜" },
+                "options": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "example": ["2025.09.17", "2025.09.18", "2025.09.19"]
+                }
+              },
+              "required": ["title", "options"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Poll created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string" },
+                "poll": {
+                  "type": "object",
+                  "properties": {
+                    "poll_id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "options": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                },
+                "card": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/polls/{poll_id}/vote": {
+      "post": {
+        "summary": "Cast a vote for a poll option",
+        "parameters": [
+          {
+            "name": "poll_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "option": { "type": "string", "example": "2025.09.17" }
+              },
+              "required": ["option"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vote recorded",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "poll_id": { "type": "string" },
+                "option": { "type": "string" },
+                "votes": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/polls/{poll_id}/close": {
+      "post": {
+        "summary": "Close the poll and return final results",
+        "parameters": [
+          {
+            "name": "poll_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Poll closed",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "poll_id": { "type": "string" },
+                "title": { "type": "string" },
+                "results": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "option": { "type": "string" },
+                      "votes": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

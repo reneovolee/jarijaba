@@ -1,45 +1,44 @@
+# db.py
 from sqlalchemy import create_engine, Column, String, Boolean, Integer, ForeignKey
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
-import os
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
 
-# --------------------------
-# DB 설정 (SQLite)
-# --------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'vote.db')}"
+DATABASE_URL = "sqlite:///./polls.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+engine = create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 Base = declarative_base()
 
-# --------------------------
-# 모델 정의
-# --------------------------
+
 class Poll(Base):
     __tablename__ = "polls"
+
     id = Column(String, primary_key=True, index=True)
-    title = Column(String, nullable=False)
+    title = Column(String, index=True)
     is_closed = Column(Boolean, default=False)
-    options = relationship("PollOption", back_populates="poll", cascade="all, delete-orphan")
+    options = relationship("PollOption", back_populates="poll")
 
 
 class PollOption(Base):
     __tablename__ = "poll_options"
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     poll_id = Column(String, ForeignKey("polls.id"))
-    option = Column(String, nullable=False)
+    option = Column(String)
     votes = Column(Integer, default=0)
+
     poll = relationship("Poll", back_populates="options")
 
-# --------------------------
-# DB 초기화
-# --------------------------
+
+# DB 초기화 함수
 def init_db():
     Base.metadata.create_all(bind=engine)
 
-# --------------------------
-# DB 세션 의존성
-# --------------------------
+
+# DB 세션 가져오기
 def get_db():
     db = SessionLocal()
     try:
